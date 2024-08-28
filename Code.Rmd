@@ -1,0 +1,241 @@
+---
+title: "Stats Project 2"
+author: "Theodoro Gasperin Terra Camargo"
+class: "Statistical Methods for Bioinformatics"
+date: "2024-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(rpart)
+library(RCurl)
+library(ggplot2)
+library(skimr)
+
+
+# importing data set
+load("./MI.RData")
+
+```
+
+### Question 1
+
+Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.
+
+n > p
+5 misssing data 
+dimensionality of the data
+corinality <- variables that are correlated need to be removed
+
+
+
+```{r data_exploration, include=FALSE}
+head(MI)
+summary(MI)
+#pairs(MI)
+dim(MI)
+
+# checking for missing values
+#sum(is.na(MI))
+
+# GAM (general additive models)? 
+#gam()
+# predict(gam1, se=TRUE, col= "purple")
+
+
+```
+
+```{r missing_data, include=FALSE}
+
+# Predictive Imputation
+
+
+# Removing missing values
+MI = MI[complete.cases(MI),]
+# or
+#MI = na.omit(MI)
+sum(is.na(MI))
+```
+
+
+```{r split_data, echo=FALSE}
+library(caret)
+
+set.seed(33)
+# Splitting data into training and testing sets
+trainIndex <- createDataPartition(MI$LET_IS, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+MI_train <- MI[ trainIndex,]
+MI_test  <- MI[-trainIndex,]
+```
+
+### Question 2  
+
+Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to compare your models to?
+
+```{r unconstrained_linear_model, echo=FALSE}
+library(glmnet)
+library(dplyr)
+library(leaps)
+
+unconstrained_model <- glm(LET_IS ~ ., data = MI_train, family = binomial)
+#summary(unconstrained_model)
+
+# Predictions
+unconstrained_pred <- predict(unconstrained_model, newdata = MI_test, type = "response")
+unconstrained_pred_class <- ifelse(unconstrained_pred > 0.5, TRUE, FALSE)
+
+# Confusion matrix
+unconstrained_model.table <- table(MI_test$LET_IS, unconstrained_pred_class)
+unconstrained_model.table
+```
+
+```{r lasso_model, echo=FALSE}
+# Lasso Model with Cross-Validation of 5 folds on the Training data
+lasso_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 1, family = "binomial", nfolds = 5)
+
+# Best lambda
+plot(lasso_model)
+
+# Best lambda values
+lasso_model$lambda.min
+lasso_model$lambda.1se
+
+# Coefficients of variables at lambda min and lambda 1se
+coef(lasso_model, s = "lambda.min")
+coef(lasso_model, s = "lambda.1se")
+
+# Predictions
+lasso_pred.min <- predict(lasso_model, s= lasso_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+lasso_pred.1se <- predict(lasso_model, s= lasso_model$lambda.1se, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+
+# Confusion matrix
+lasso_model.table <- table(MI_test$LET_IS, lasso_pred.min)
+table(MI_test$LET_IS, lasso_pred.1se)
+
+```
+
+```{r ridge_model, echo=FALSE}
+# Ridge Model with Cross-Validation of 5 folds on the Training data
+ridge_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 0, family = "binomial", nfolds = 5)
+
+# Best lambda
+plot(ridge_model)
+
+# Best lambda values
+ridge_model$lambda.min
+ridge_model$lambda.1se
+
+# Coefficients of variables at lambda min and lambda 1se
+coef(lasso_model, s = "lambda.min")
+coef(lasso_model, s = "lambda.1se")
+
+# Predictions
+ridge_pred.min <- predict(ridge_model, s= ridge_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+ridge_pred.1se <- predict(ridge_model, s= ridge_model$lambda.1se, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+
+# Confusion matrix
+ridge_model.table <- table(MI_test$LET_IS, ridge_pred.min)
+table(MI_test$LET_IS, ridge_pred.1se)
+
+```
+
+```{r base_level_performance, echo=FALSE}
+library(caret)
+library(e1071)
+confusionMatrix(unconstrained_model.table)
+confusionMatrix(lasso_model.table)
+confusionMatrix(ridge_model.table)
+
+```
+
+
+### Question 3
+
+Among your top predictors, do you see evidence of non-linear effects? How could you accommodate non-linear effects and still use a regularized regression approach? Does adding non-linear effects improve your model?
+
+```{r shrinkage, echo=FALSE}
+
+# *** Shrinkage Linear model ***
+regfit.fwd <- regsubsets(LET_IS ~ ., data = MI, nvmax = 35, method = "forward")
+regfit.fwd.summary <- summary(regfit.fwd)
+
+regfit.bwd <- regsubsets(LET_IS ~ ., data = MI_train, nvmax = 35, method = "backward") 
+regfit.bwd.summary <-summary(regfit.bwd)
+
+# Bic (forward selection)
+which.min(regfit.fwd.summary$bic)
+plot(regfit.fwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+points(20, regfit.fwd.summary$bic[20], col = "red", cex = 2, pch = 20)
+
+# Bic (backward selection)
+which.min(regfit.bwd.summary$bic)
+plot(regfit.bwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+points(19, regfit.bwd.summary$bic[19], col = "red", cex = 2, pch = 20)
+
+# Best predictors variables
+best_predictors.fwd <- names(which(regfit.fwd.summary$which[20, ] == TRUE))
+best_predictors.bwd <- names(which(regfit.bwd.summary$which[19, ] == TRUE))
+
+# ploting the best models
+#par(mfrow = c(2, 2))
+#plot(regfit.fwd.summary$rss, xlab = "Number of Variables",
+#ylab = "RSS", type = "l")
+#plot(regfit.fwd.summary$adjr2, xlab = "Number of Variables",
+#ylab = "Adjusted RSq", type = "l")
+
+# Cp
+#plot(regfit.fwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+#which.min(regfit.fwd.summary$cp)
+#points(35, regfit.fwd.summary$cp[35], col = "red", cex = 2, pch = 20) 
+```
+
+```{r non_linear, echo=FALSE}
+library(ISLR2)
+# idea here is to find non-linear effects
+# we can use the best predictors from the forward selection
+# and then use the best predictors to fit a linear model
+# and then use the residuals to fit a non-linear model
+# and then compare the performance of the two models
+best_predictors <- as.vector(intersect(best_predictors.fwd, best_predictors.bwd))
+
+# GAM for the save and Degrees of Freedom chapter 7
+
+
+```
+
+### Question 4
+
+Fit an appropriate Random Forest model. Report a comparison of performance to your linear model and explain any differences in performance. Do you see an important difference in how variables are used for predictions?
+
+```{r random_forest, echo=FALSE}
+library(randomForest)
+set.seed(33)
+
+# Random Forest model
+forest_model <- randomForest(LET_IS ~ ., mtry= 12, data = MI_train, ntree = 500)
+
+forest_pred <- predict(forest_model, MI_test, type = "class")
+forest_model.table <- table(MI_test$LET_IS, forest_pred)
+
+confusionMatrix(forest_model.table)
+```
+
+```{r performance, echo=FALSE}
+# ROC curve
+library(pROC)
+
+roc_obj <- roc(MI_test$LET_IS, as.numeric(forest_pred))
+plot(roc_obj, col = "blue")
+
+# TODO: plot ROC curve for linear models
+
+```
+
+```{r}
+
+```
