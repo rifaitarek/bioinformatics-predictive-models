@@ -1,6 +1,6 @@
 # Bioinformatics Predictive Models in R
 
-This repository contains the R code and analysis for a statistical project focused on predictive modeling in bioinformatics. The project compares various machine learning models, including unconstrained linear models, Lasso regression, Ridge regression, Generalized Additive Models (GAM), and Random Forests, to predict patient survival based on a set of bioinformatics predictors.
+This repository contains the R code and analysis for a statistical project focused on predictive modeling in bioinformatics. The project compares various machine learning models, including unconstrained linear models, Lasso regression, Ridge regression, Generalized Additive Models (GAM), and Random Forests, to predict patient survival based on a set of biological predictors.
 
 ## Table of Contents
 - [Introduction](#introduction)
